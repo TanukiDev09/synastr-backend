@@ -8,7 +8,8 @@ project conventions.
 """
 
 import enum
-from datetime import date, time
+# 1. Import 'datetime' para la conversión
+from datetime import date, time, datetime
 from typing import List, Optional
 
 import strawberry
@@ -119,12 +120,18 @@ class Query:
         users = []
         async for u in users_cursor:
             photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in u.get("photos", [])]
+            # MongoDB devuelve un datetime, pero Strawberry espera un date y un time
+            birth_datetime = u.get("birth_date")
+            birth_date_obj = birth_datetime.date() if birth_datetime else None
+            birth_time_str = u.get("birth_time")
+            birth_time_obj = time.fromisoformat(birth_time_str) if birth_time_str else None
+
             users.append(
                 User(
                     id=str(u.get("_id")),
                     email=u.get("email"),
-                    birth_date=u.get("birth_date"),
-                    birth_time=u.get("birth_time"),
+                    birth_date=birth_date_obj,
+                    birth_time=birth_time_obj,
                     birth_place=u.get("birth_place"),
                     photos=photos,
                 )
@@ -147,7 +154,6 @@ class Mutation:
         if existing:
             raise Exception("User with this email already exists")
 
-        # Create Pydantic user model and hash password
         user_model = UserModel(
             email=input.email,
             password_hash=UserModel.hash_password(input.password),
@@ -156,11 +162,18 @@ class Mutation:
             birth_place=input.birth_place,
         )
 
-        # Insert into MongoDB (convert to dict with alias for _id)
-        result = await users_collection.insert_one(user_model.dict(by_alias=True))
+        # 2. ✅ AQUÍ ESTÁ LA SOLUCIÓN
+        # Convertimos el modelo a un diccionario y corregimos los tipos manualmente
+        # para que sean compatibles con la base de datos (BSON).
+        user_data_to_insert = user_model.model_dump(by_alias=True)
+        user_data_to_insert["birth_date"] = datetime.combine(user_model.birth_date, time.min)
+        user_data_to_insert["birth_time"] = user_model.birth_time.isoformat()
+
+        # Insertamos el diccionario corregido en MongoDB
+        result = await users_collection.insert_one(user_data_to_insert)
         inserted_id = result.inserted_id
 
-        # Build GraphQL user instance
+        # Construimos la respuesta de GraphQL
         user = User(
             id=str(inserted_id),
             email=user_model.email,
@@ -186,18 +199,23 @@ class Mutation:
         if not user_data:
             raise Exception("Invalid credentials")
 
-        # Reconstruct Pydantic user model to access password verification
         user_model = UserModel(**user_data)
         if not user_model.verify_password(input.password):
             raise Exception("Invalid credentials")
 
-        # Build GraphQL user instance
         photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in user_data.get("photos", [])]
+        
+        # Reconvertimos los tipos para la respuesta de GraphQL
+        birth_datetime = user_data.get("birth_date")
+        birth_date_obj = birth_datetime.date() if birth_datetime else None
+        birth_time_str = user_data.get("birth_time")
+        birth_time_obj = time.fromisoformat(birth_time_str) if birth_time_str else None
+
         user = User(
             id=str(user_data.get("_id")),
             email=user_model.email,
-            birth_date=user_model.birth_date,
-            birth_time=user_model.birth_time,
+            birth_date=birth_date_obj,
+            birth_time=birth_time_obj,
             birth_place=user_model.birth_place,
             photos=photos,
         )
