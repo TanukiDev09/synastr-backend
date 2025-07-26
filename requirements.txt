@@ -2,7 +2,7 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 strawberry-graphql==0.213.0
 motor==3.2.0
-pymongo==4.12.3
+pymongo==4.12.2
 redis[hiredis]==5.0.3
 pydantic[email]==2.6.4
 python-dotenv==1.0.1
