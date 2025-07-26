@@ -6,11 +6,11 @@ se enviará/recibirá a través del API GraphQL. Incluye utilidades para
 hashing de contraseñas.
 """
 
-from datetime import date, time
+# Se importa datetime para la conversión
+from datetime import date, time, datetime
 from typing import List, Optional
 
 from bson import ObjectId
-# 1. Se importa ConfigDict para la nueva configuración de Pydantic
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from passlib.context import CryptContext
 
@@ -35,12 +35,19 @@ class UserModel(BaseModel):
     plan: str = "free"
     photos: List[PhotoModel] = []
 
-    # 2. Se reemplaza la 'class Config' por 'model_config'
-    #    y se actualiza 'allow_population_by_field_name' a 'validate_by_name'
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        json_encoders={ObjectId: str},
         validate_by_name=True,
+        # ✅ AQUÍ ESTÁ LA SOLUCIÓN:
+        # Le decimos a Pydantic cómo convertir 'date' y 'time'
+        # a formatos que MongoDB entiende.
+        json_encoders={
+            ObjectId: str,
+            # La fecha se convierte en un objeto datetime (a medianoche)
+            date: lambda d: datetime.combine(d, time.min),
+            # La hora se convierte en un string (ej: "14:30:00")
+            time: lambda t: t.isoformat(),
+        },
     )
 
     @staticmethod
