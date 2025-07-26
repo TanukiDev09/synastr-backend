@@ -77,7 +77,7 @@ OAUTH_CLIENT_SECRET=your-client-secret
 1. Instala las dependencias:
 
    ```bash
-   python -m venv .venv
+   py -3.11 -m venv .venv
    .venv\Scripts\activate
    pip install -r requirements.txt
    ```
