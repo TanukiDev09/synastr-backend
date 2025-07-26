@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: synastr-backend
+    env_file:
+      - .env
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/synastr
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - mongodb
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/code
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  mongodb:
+    image: mongo:6
+    container_name: synastr-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:7
+    container_name: synastr-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongodb_data:
+  redis_data:

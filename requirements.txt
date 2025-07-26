@@ -1,0 +1,15 @@
+# Synastr backend dependencies
+# (Versiones actualizadas para mayor compatibilidad y seguridad)
+
+fastapi
+uvicorn[standard]
+strawberry-graphql
+motor  # Async MongoDB driver
+redis[hiredis]
+pydantic
+python-dotenv
+python-jose
+passlib[bcrypt]
+cloudinary
+PyYAML
+typing_extensions>=4.7.0
