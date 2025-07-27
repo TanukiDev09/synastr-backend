@@ -8,8 +8,7 @@ project conventions.
 """
 
 import enum
-# 1. Import 'datetime' para la conversión
-from datetime import date, time, datetime
+from datetime import date, time
 from typing import List, Optional
 
 import strawberry
@@ -85,6 +84,27 @@ class LoginInput:
     password: str
 
 
+@strawberry.input
+class LikeInput:
+    """
+    Represents a like action from one user to another. Both user IDs are
+    required because authentication has not yet been implemented at resolver
+    level. Once authentication context is available, the `user_id` can be
+    derived from the JWT and omitted from the input.
+    """
+    user_id: strawberry.ID
+    target_user_id: strawberry.ID
+
+
+@strawberry.type
+class LikeResponse:
+    """
+    Response returned by the `like_user` mutation. It indicates whether
+    the action resulted in a new match being created.
+    """
+    matched: bool
+
+
 @strawberry.type
 class CompatibilityBreakdown:
     category: str
@@ -120,18 +140,12 @@ class Query:
         users = []
         async for u in users_cursor:
             photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in u.get("photos", [])]
-            # MongoDB devuelve un datetime, pero Strawberry espera un date y un time
-            birth_datetime = u.get("birth_date")
-            birth_date_obj = birth_datetime.date() if birth_datetime else None
-            birth_time_str = u.get("birth_time")
-            birth_time_obj = time.fromisoformat(birth_time_str) if birth_time_str else None
-
             users.append(
                 User(
                     id=str(u.get("_id")),
                     email=u.get("email"),
-                    birth_date=birth_date_obj,
-                    birth_time=birth_time_obj,
+                    birth_date=u.get("birth_date"),
+                    birth_time=u.get("birth_time"),
                     birth_place=u.get("birth_place"),
                     photos=photos,
                 )
@@ -154,6 +168,7 @@ class Mutation:
         if existing:
             raise Exception("User with this email already exists")
 
+        # Create Pydantic user model and hash password
         user_model = UserModel(
             email=input.email,
             password_hash=UserModel.hash_password(input.password),
@@ -162,18 +177,11 @@ class Mutation:
             birth_place=input.birth_place,
         )
 
-        # 2. ✅ AQUÍ ESTÁ LA SOLUCIÓN
-        # Convertimos el modelo a un diccionario y corregimos los tipos manualmente
-        # para que sean compatibles con la base de datos (BSON).
-        user_data_to_insert = user_model.model_dump(by_alias=True)
-        user_data_to_insert["birth_date"] = datetime.combine(user_model.birth_date, time.min)
-        user_data_to_insert["birth_time"] = user_model.birth_time.isoformat()
-
-        # Insertamos el diccionario corregido en MongoDB
-        result = await users_collection.insert_one(user_data_to_insert)
+        # Insert into MongoDB (convert to dict with alias for _id)
+        result = await users_collection.insert_one(user_model.dict(by_alias=True))
         inserted_id = result.inserted_id
 
-        # Construimos la respuesta de GraphQL
+        # Build GraphQL user instance
         user = User(
             id=str(inserted_id),
             email=user_model.email,
@@ -199,29 +207,60 @@ class Mutation:
         if not user_data:
             raise Exception("Invalid credentials")
 
+        # Reconstruct Pydantic user model to access password verification
         user_model = UserModel(**user_data)
         if not user_model.verify_password(input.password):
             raise Exception("Invalid credentials")
 
+        # Build GraphQL user instance
         photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in user_data.get("photos", [])]
-        
-        # Reconvertimos los tipos para la respuesta de GraphQL
-        birth_datetime = user_data.get("birth_date")
-        birth_date_obj = birth_datetime.date() if birth_datetime else None
-        birth_time_str = user_data.get("birth_time")
-        birth_time_obj = time.fromisoformat(birth_time_str) if birth_time_str else None
-
         user = User(
             id=str(user_data.get("_id")),
             email=user_model.email,
-            birth_date=birth_date_obj,
-            birth_time=birth_time_obj,
+            birth_date=user_model.birth_date,
+            birth_time=user_model.birth_time,
             birth_place=user_model.birth_place,
             photos=photos,
         )
 
         token = create_access_token(user_model.email)
         return AuthPayload(token=token, user=user)
+
+    @strawberry.mutation
+    async def like_user(self, input: LikeInput) -> LikeResponse:
+        """
+        Records a "like" from one user to another and checks for a reciprocal
+        like. If both users have liked each other, a new match record is
+        created. Returns whether a match occurred.
+
+        Note: this implementation does not enforce authentication; both
+        `user_id` and `target_user_id` must be supplied. In a production
+        version, the `user_id` should come from the JWT in the request
+        context and should not be provided by the client.
+        """
+        db = get_mongo_db()
+        likes_collection = db.get_collection("likes")
+        matches_collection = db.get_collection("matches")
+
+        # Persist the like action
+        await likes_collection.insert_one({
+            "user_id": input.user_id,
+            "target_user_id": input.target_user_id,
+        })
+
+        # Check if the target user has already liked the current user
+        reciprocal = await likes_collection.find_one({
+            "user_id": input.target_user_id,
+            "target_user_id": input.user_id,
+        })
+        if reciprocal:
+            # Create a match record for both users
+            await matches_collection.insert_one({
+                "users": [input.user_id, input.target_user_id],
+            })
+            return LikeResponse(matched=True)
+
+        return LikeResponse(matched=False)
 
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
