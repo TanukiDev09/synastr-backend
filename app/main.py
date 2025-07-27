@@ -8,6 +8,10 @@ y monta el servidor GraphQL a través de Strawberry.
 import os
 from typing import List
 
+# ✅ 1. Importar asynccontextmanager
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,10 +21,27 @@ from strawberry.asgi import GraphQL
 from app.api.graphql_schema import schema
 from app.db.client import init_db_clients
 
+load_dotenv()
+
+# ✅ 2. Crear el manejador de ciclo de vida "lifespan"
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Lo que se ejecuta ANTES de que la aplicación empiece a aceptar peticiones
+    print("Iniciando aplicación...")
+    await init_db_clients()
+    print("Clientes de base de datos inicializados.")
+    
+    yield  # La aplicación se ejecuta aquí
+    
+    # Lo que se ejecuta DESPUÉS de que la aplicación se apaga
+    print("Apagando aplicación...")
+    # Aquí iría el código para cerrar conexiones si fuera necesario
+
 
 def create_app() -> FastAPI:
     """Crea y configura una instancia de FastAPI."""
-    app = FastAPI(title="Synastr Backend", version="0.1.0")
+    # ✅ 3. Pasar el "lifespan" a la instancia de FastAPI
+    app = FastAPI(title="Synastr Backend", version="0.1.0", lifespan=lifespan)
 
     # Configuración CORS para permitir peticiones desde el frontend local
     origins: List[str] = [
@@ -43,11 +64,8 @@ def create_app() -> FastAPI:
     app.add_route("/graphql", graphql_app)
     app.add_websocket_route("/graphql", graphql_app)
 
-    @app.on_event("startup")
-    async def on_startup() -> None:
-        # Inicializa clientes de MongoDB y Redis
-        await init_db_clients()
-
+    # ✅ 4. El antiguo bloque @app.on_event("startup") se elimina
+    
     @app.get("/")
     async def root() -> JSONResponse:
         return JSONResponse(content={"message": "Synastr backend en funcionamiento"})

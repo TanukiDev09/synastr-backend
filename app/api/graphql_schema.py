@@ -8,7 +8,7 @@ project conventions.
 """
 
 import enum
-from datetime import date, time
+from datetime import date, time, datetime, timezone
 from typing import List, Optional
 
 import strawberry
@@ -18,6 +18,20 @@ from pydantic import BaseModel
 from app.auth.jwt import create_access_token
 from app.models.user import UserModel
 from app.db.client import get_mongo_db
+
+# Errores específicos para un manejo más claro
+class UserAlreadyExistsError(Exception):
+    pass
+
+class InvalidCredentialsError(Exception):
+    pass
+
+class DatabaseOperationError(Exception):
+    pass
+
+# ✅ 1. SE CREA EL NUEVO ERROR ESPECÍFICO
+class LikeAlreadyExistsError(Exception):
+    pass
 
 
 @strawberry.enum
@@ -140,16 +154,67 @@ class Query:
         users = []
         async for u in users_cursor:
             photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in u.get("photos", [])]
+            
+            birth_datetime = u.get("birth_date")
+            birth_date_obj = birth_datetime.date() if isinstance(birth_datetime, datetime) else birth_datetime
+            birth_time_str = u.get("birth_time")
+            birth_time_obj = time.fromisoformat(birth_time_str) if isinstance(birth_time_str, str) else birth_time_str
+
             users.append(
                 User(
                     id=str(u.get("_id")),
                     email=u.get("email"),
-                    birth_date=u.get("birth_date"),
-                    birth_time=u.get("birth_time"),
+                    birth_date=birth_date_obj,
+                    birth_time=birth_time_obj,
                     birth_place=u.get("birth_place"),
                     photos=photos,
                 )
             )
+        return users
+
+    @strawberry.field
+    async def likers(self, user_id: strawberry.ID) -> List[User]:
+        """
+        Returns a list of users who have liked the given user. It looks up
+        all like records where `target_user_id` matches the provided ID
+        and then fetches the corresponding user documents. If no likes are
+        found an empty list is returned.
+        """
+        db = get_mongo_db()
+        likes_collection = db.get_collection("likes")
+        users_collection = db.get_collection("users")
+
+        likes_cursor = likes_collection.find({"target_user_id": str(user_id)})
+        liker_ids = []
+        async for like in likes_cursor:
+            liker_ids.append(like.get("user_id"))
+
+        users: List[User] = []
+        for uid in liker_ids:
+            try:
+                oid = uid if isinstance(uid, ObjectId) else ObjectId(uid)
+            except Exception:
+                continue
+            
+            data = await users_collection.find_one({"_id": oid})
+            if data:
+                photos = [Photo(url=p.get("url"), sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in data.get("photos", [])]
+                
+                birth_datetime = data.get("birth_date")
+                birth_date_obj = birth_datetime.date() if isinstance(birth_datetime, datetime) else birth_datetime
+                birth_time_str = data.get("birth_time")
+                birth_time_obj = time.fromisoformat(birth_time_str) if isinstance(birth_time_str, str) else birth_time_str
+
+                users.append(
+                    User(
+                        id=str(data.get("_id")),
+                        email=data.get("email"),
+                        birth_date=birth_date_obj,
+                        birth_time=birth_time_obj,
+                        birth_place=data.get("birth_place"),
+                        photos=photos,
+                    )
+                )
         return users
 
 
@@ -166,9 +231,8 @@ class Mutation:
         users_collection = db.get_collection("users")
         existing = await users_collection.find_one({"email": input.email})
         if existing:
-            raise Exception("User with this email already exists")
+            raise UserAlreadyExistsError("User with this email already exists")
 
-        # Create Pydantic user model and hash password
         user_model = UserModel(
             email=input.email,
             password_hash=UserModel.hash_password(input.password),
@@ -177,11 +241,13 @@ class Mutation:
             birth_place=input.birth_place,
         )
 
-        # Insert into MongoDB (convert to dict with alias for _id)
-        result = await users_collection.insert_one(user_model.dict(by_alias=True))
+        user_data_to_insert = user_model.model_dump(by_alias=True)
+        user_data_to_insert["birth_date"] = datetime.combine(user_model.birth_date, time.min)
+        user_data_to_insert["birth_time"] = user_model.birth_time.isoformat()
+        
+        result = await users_collection.insert_one(user_data_to_insert)
         inserted_id = result.inserted_id
 
-        # Build GraphQL user instance
         user = User(
             id=str(inserted_id),
             email=user_model.email,
@@ -205,20 +271,24 @@ class Mutation:
         users_collection = db.get_collection("users")
         user_data = await users_collection.find_one({"email": input.email})
         if not user_data:
-            raise Exception("Invalid credentials")
+            raise InvalidCredentialsError("Invalid credentials")
 
-        # Reconstruct Pydantic user model to access password verification
         user_model = UserModel(**user_data)
         if not user_model.verify_password(input.password):
-            raise Exception("Invalid credentials")
+            raise InvalidCredentialsError("Invalid credentials")
 
-        # Build GraphQL user instance
         photos = [Photo(url=p["url"], sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in user_data.get("photos", [])]
+        
+        birth_datetime = user_data.get("birth_date")
+        birth_date_obj = birth_datetime.date() if isinstance(birth_datetime, datetime) else birth_datetime
+        birth_time_str = user_data.get("birth_time")
+        birth_time_obj = time.fromisoformat(birth_time_str) if isinstance(birth_time_str, str) else birth_time_str
+
         user = User(
             id=str(user_data.get("_id")),
             email=user_model.email,
-            birth_date=user_model.birth_date,
-            birth_time=user_model.birth_time,
+            birth_date=birth_date_obj,
+            birth_time=birth_time_obj,
             birth_place=user_model.birth_place,
             photos=photos,
         )
@@ -229,34 +299,40 @@ class Mutation:
     @strawberry.mutation
     async def like_user(self, input: LikeInput) -> LikeResponse:
         """
-        Records a "like" from one user to another and checks for a reciprocal
-        like. If both users have liked each other, a new match record is
-        created. Returns whether a match occurred.
-
-        Note: this implementation does not enforce authentication; both
-        `user_id` and `target_user_id` must be supplied. In a production
-        version, the `user_id` should come from the JWT in the request
-        context and should not be provided by the client.
+        This version prevents duplicate likes and raises an explicit error.
         """
         db = get_mongo_db()
         likes_collection = db.get_collection("likes")
-        matches_collection = db.get_collection("matches")
-
-        # Persist the like action
-        await likes_collection.insert_one({
-            "user_id": input.user_id,
-            "target_user_id": input.target_user_id,
+        
+        # ✅ 2. SE VERIFICA SI EL LIKE YA EXISTE
+        existing_like = await likes_collection.find_one({
+            "user_id": str(input.user_id),
+            "target_user_id": str(input.target_user_id),
         })
+        
+        # Si el like ya existe, se lanza el nuevo error.
+        if existing_like:
+            raise LikeAlreadyExistsError(f"User {input.user_id} has already liked {input.target_user_id}")
 
-        # Check if the target user has already liked the current user
+        # Si no existe, se procede a crearlo
+        like_document = {
+            "user_id": str(input.user_id),
+            "target_user_id": str(input.target_user_id),
+            "created_at": datetime.now(timezone.utc)
+        }
+        await likes_collection.insert_one(like_document)
+
+        # Después de insertar, se comprueba si se formó un match
         reciprocal = await likes_collection.find_one({
-            "user_id": input.target_user_id,
-            "target_user_id": input.user_id,
+            "user_id": str(input.target_user_id),
+            "target_user_id": str(input.user_id),
         })
+
         if reciprocal:
-            # Create a match record for both users
+            matches_collection = db.get_collection("matches")
             await matches_collection.insert_one({
-                "users": [input.user_id, input.target_user_id],
+                "users": [str(input.user_id), str(input.target_user_id)],
+                "created_at": datetime.now(timezone.utc)
             })
             return LikeResponse(matched=True)
 
