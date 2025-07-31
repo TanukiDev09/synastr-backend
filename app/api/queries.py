@@ -1,104 +1,56 @@
 # app/api/queries.py
-
 """
 Ensambla todas las queries de GraphQL en un único tipo 'Query'.
-
-Este archivo importa los resolvers de queries desde los archivos de lógica
-separados y los une para que el esquema principal de GraphQL los pueda utilizar.
 """
-from __future__ import annotations
-
-import strawberry
 from typing import List
 from datetime import datetime, time
-
+import strawberry
 from bson import ObjectId
 
 from app.db.client import get_mongo_db
-from app.seeds import ZODIAC_PHOTO_SUGGESTIONS
+from .types import User, CompatibilityBreakdown, Photo, ZodiacSign
+from .zodiac_logic import calculate_compatibility_scores
 
-# 1. Importar los tipos necesarios desde types.py
-from .types import (
-    User,
-    Match,
-    CompatibilityBreakdown,
-    Photo,
-    ZodiacSign,
-)
+async def get_compatibility(user_id: strawberry.ID, target_user_id: strawberry.ID, premium: bool = False) -> List[CompatibilityBreakdown]:
+    """Resolver para calcular la compatibilidad astrológica."""
+    db = get_mongo_db()
+    users = db.get_collection("users")
+    
+    user1 = await users.find_one({"_id": ObjectId(str(user_id))})
+    user2 = await users.find_one({"_id": ObjectId(str(target_user_id))})
 
-# 2. Importar los resolvers que ya hemos separado
-from .resolvers.match_resolvers import get_likers, get_matches
+    if not user1 or not user2:
+        raise Exception("One or both users not found.")
 
+    date1 = user1.get("birth_date")
+    date2 = user2.get("birth_date")
+    
+    # La lógica de negocio se llama aquí
+    scores = calculate_compatibility_scores(date1, date2, premium)
 
-# --- Definición de tipos adicionales para las nuevas queries ---
-
-@strawberry.type
-class PhotoSuggestion:
-    """Representa una sugerencia de foto con su signo zodiacal asociado."""
-    sign: str
-    prompt: str
-
-
-# --- Lógica de los Resolvers ---
+    return [CompatibilityBreakdown(**s) for s in scores]
 
 async def get_feed() -> List[User]:
-    """
-    Devuelve una lista de todos los usuarios para el feed.
-    """
+    """Resolver para obtener el feed de usuarios."""
     db = get_mongo_db()
-    users_collection = db.get_collection("users")
-    users_cursor = users_collection.find({})
-    users: List[User] = []
+    users_cursor = db.get_collection("users").find({})
+    users_list: List[User] = []
     async for u in users_cursor:
-        photos = [Photo(url=p.get("url"), sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in u.get("photos", [])]
-        
-        birth_datetime = u.get("birth_date")
-        birth_date_obj = birth_datetime.date() if isinstance(birth_datetime, datetime) else birth_datetime
-        birth_time_str = u.get("birth_time")
-        birth_time_obj = time.fromisoformat(birth_time_str) if isinstance(birth_time_str, str) else birth_time_str
-        
-        users.append(
+        birth_dt = u.get("birth_date")
+        birth_t_str = u.get("birth_time")
+        users_list.append(
             User(
                 id=str(u.get("_id")),
                 email=u.get("email"),
-                birth_date=birth_date_obj,
-                birth_time=birth_time_obj,
+                birth_date=birth_dt.date() if isinstance(birth_dt, datetime) else birth_dt,
+                birth_time=time.fromisoformat(birth_t_str) if isinstance(birth_t_str, str) else birth_t_str,
                 birth_place=u.get("birth_place"),
-                photos=photos,
+                photos=[Photo(url=p.get("url"), sign=ZodiacSign[p.get("sign")] if p.get("sign") else None) for p in u.get("photos", [])]
             )
         )
-    return users
-
-async def get_compatibility(user_id: strawberry.ID) -> List[CompatibilityBreakdown]:
-    """
-    Devuelve un análisis de compatibilidad de ejemplo.
-    """
-    return [
-        CompatibilityBreakdown(category="Amor & afecto", score=85.0, description="High compatibility based on Moon and Venus"),
-        CompatibilityBreakdown(category="Sexo & deseo", score=70.0, description="Good physical chemistry"),
-        CompatibilityBreakdown(category="Comunicación", score=90.0, description="Excellent communication"),
-        CompatibilityBreakdown(category="Pareja estable", score=60.0, description="Work on long‑term stability"),
-    ]
-
-async def get_photo_suggestions() -> List[PhotoSuggestion]:
-    """
-    Devuelve la lista de sugerencias de fotos por signo desde los datos de semillas.
-    """
-    return [
-        PhotoSuggestion(sign=sign, prompt=prompt)
-        for sign, prompt in ZODIAC_PHOTO_SUGGESTIONS.items()
-    ]
-
-
-# --- Ensamblaje del tipo Query ---
+    return users_list
 
 @strawberry.type
 class Query:
-    # Asignar cada campo a su función resolver correspondiente
     feed: List[User] = strawberry.field(resolver=get_feed)
     compatibility: List[CompatibilityBreakdown] = strawberry.field(resolver=get_compatibility)
-    likers: List[User] = strawberry.field(resolver=get_likers)
-    matches: List[Match] = strawberry.field(resolver=get_matches)
-    
-    # ✅ Se añade el nuevo campo para obtener las sugerencias de fotos
-    photoSuggestions: List[PhotoSuggestion] = strawberry.field(resolver=get_photo_suggestions)
