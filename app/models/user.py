@@ -6,7 +6,6 @@ se enviará/recibirá a través del API GraphQL. Incluye utilidades para
 hashing de contraseñas.
 """
 
-# Se importa datetime para la conversión
 from datetime import date, time, datetime
 from typing import List, Optional
 
@@ -22,6 +21,18 @@ class PhotoModel(BaseModel):
     url: str
     sign: Optional[str]
 
+class AstrologicalPosition(BaseModel):
+    """Represents the position of a celestial body in the zodiac."""
+    name: str
+    sign: str
+    sign_icon: str
+    degrees: float
+    house: int
+
+class NatalChart(BaseModel):
+    """Contains all the positions of the natal chart."""
+    positions: List[AstrologicalPosition] = []
+    houses: List[AstrologicalPosition] = []
 
 class UserModel(BaseModel):
     id: Optional[ObjectId] = Field(default_factory=ObjectId, alias="_id")
@@ -30,22 +41,21 @@ class UserModel(BaseModel):
     birth_date: date
     birth_time: time
     birth_place: str
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    natal_chart: Optional[NatalChart] = None
+    # ---- INICIO DE LA CORRECCIÓN ----
+    # Cambiamos str por datetime para que coincida con la base de datos
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    # ---- FIN DE LA CORRECCIÓN ----
     plan: str = "free"
     photos: List[PhotoModel] = []
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         validate_by_name=True,
-        # ✅ AQUÍ ESTÁ LA SOLUCIÓN:
-        # Le decimos a Pydantic cómo convertir 'date' y 'time'
-        # a formatos que MongoDB entiende.
         json_encoders={
             ObjectId: str,
-            # La fecha se convierte en un objeto datetime (a medianoche)
             date: lambda d: datetime.combine(d, time.min),
-            # La hora se convierte en un string (ej: "14:30:00")
             time: lambda t: t.isoformat(),
         },
     )
