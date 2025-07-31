@@ -1,17 +1,11 @@
+# app/api/graphql_schema.py
 """
-Ensambla el esquema principal de GraphQL para la aplicación Synastr.
-
-Este archivo importa los tipos Query y Mutation desde sus respectivos módulos
-y los utiliza para construir el objeto final de `strawberry.Schema`.
+Ensambla el esquema principal de GraphQL para la aplicación.
+Importa los tipos Query y Mutation y los une en el esquema de Strawberry.
 """
-
 import strawberry
-
-# Se importan los ensambladores de Query y Mutation
 from .queries import Query
 from .mutations import Mutation
 
-# ✅ LOS ERRORES YA NO SE DEFINEN AQUÍ
-
-# Se crea y exporta el esquema final
+# Se crea y exporta el esquema final, limpio y sin lógica de negocio.
 schema = strawberry.Schema(query=Query, mutation=Mutation)
