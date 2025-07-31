@@ -1,22 +1,26 @@
 """
-Define las excepciones personalizadas para la API de GraphQL.
+Defines the custom exceptions for the GraphQL API.
 
-Centralizar las excepciones aquí rompe las dependencias circulares
-y mantiene el código organizado.
+Centralizing exceptions here breaks circular dependencies
+and keeps the code organized.
 """
 
 class UserAlreadyExistsError(Exception):
-    """Lanzado al intentar registrar un email que ya existe."""
+    """Raised when trying to register an email that already exists."""
     pass
 
 class InvalidCredentialsError(Exception):
-    """Lanzado cuando las credenciales de inicio de sesión son incorrectas."""
+    """Raised when login credentials are incorrect."""
     pass
 
 class DatabaseOperationError(Exception):
-    """Lanzado cuando una operación de base de datos falla."""
+    """Raised when a database operation fails."""
     pass
 
 class LikeAlreadyExistsError(Exception):
-    """Lanzado al registrar un "like" duplicado."""
+    """Raised when registering a duplicate "like"."""
+    pass
+
+class AstrologicalCalculationError(Exception):
+    """Raised when natal chart calculation or geocoding fails."""
     pass
