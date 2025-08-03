@@ -57,6 +57,9 @@ class User:
     birth_date: date
     birth_time: time
     birth_place: str
+    latitude: Optional[float]          # ✅ Nuevo campo
+    longitude: Optional[float]         # ✅ Nuevo campo
+    timezone: Optional[str]            # ✅ Nuevo campo
     photos: List[Photo]
     natal_chart: Optional[NatalChartType]
 

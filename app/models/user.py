@@ -21,6 +21,7 @@ class PhotoModel(BaseModel):
     url: str
     sign: Optional[str]
 
+
 class AstrologicalPosition(BaseModel):
     """Represents the position of a celestial body in the zodiac."""
     name: str
@@ -29,10 +30,12 @@ class AstrologicalPosition(BaseModel):
     degrees: float
     house: int
 
+
 class NatalChart(BaseModel):
     """Contains all the positions of the natal chart."""
     positions: List[AstrologicalPosition] = []
     houses: List[AstrologicalPosition] = []
+
 
 class UserModel(BaseModel):
     id: Optional[ObjectId] = Field(default_factory=ObjectId, alias="_id")
@@ -41,12 +44,12 @@ class UserModel(BaseModel):
     birth_date: date
     birth_time: time
     birth_place: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    timezone: Optional[str] = None
     natal_chart: Optional[NatalChart] = None
-    # ---- INICIO DE LA CORRECCIÓN ----
-    # Cambiamos str por datetime para que coincida con la base de datos
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    # ---- FIN DE LA CORRECCIÓN ----
     plan: str = "free"
     photos: List[PhotoModel] = []
 
