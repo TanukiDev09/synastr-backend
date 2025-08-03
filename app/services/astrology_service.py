@@ -1,7 +1,10 @@
 # app/services/astrology_service.py
 import swisseph as swe
-from datetime import datetime, timezone
+from datetime import datetime
 from geopy.geocoders import Nominatim
+from timezonefinder import TimezoneFinder
+from zoneinfo import ZoneInfo
+
 from ..models.user import NatalChart, AstrologicalPosition
 
 # Mapping of Swiss Ephemeris planet indexes
@@ -44,9 +47,11 @@ def get_zodiac_sign_index(sign_name):
         -1,
     )
 
-async def calculate_natal_chart(birth_datetime: datetime, birth_place: str) -> NatalChart:
+async def calculate_natal_chart(birth_datetime: datetime, birth_place: str):
     """
     Calculates the complete natal chart using Swiss Ephemeris.
+    Also determines the timezone based on coordinates.
+    Returns a tuple: (NatalChart, latitude, longitude, timezone_name)
     """
     # 1. Geocode the birth place to get latitude and longitude
     geolocator = Nominatim(user_agent="synastr_app")
@@ -61,30 +66,36 @@ async def calculate_natal_chart(birth_datetime: datetime, birth_place: str) -> N
 
     latitude, longitude = location.latitude, location.longitude
 
-    # 2. Set the path for Swiss Ephemeris files (assumes an 'ephe' folder in the root)
+    # 2. Determine timezone using timezonefinder
+    tf = TimezoneFinder()
+    timezone_name = tf.timezone_at(lng=longitude, lat=latitude)
+    if not timezone_name:
+        raise ValueError("Could not determine timezone for the given location.")
+
+    # 3. Convert birth datetime to local timezone and then to UTC
+    local_tz = ZoneInfo(timezone_name)
+    birth_local = birth_datetime.replace(tzinfo=local_tz)
+    birth_dt_utc = birth_local.astimezone(ZoneInfo("UTC"))
+
+    # 4. Set path for Swiss Ephemeris
     swe.set_ephe_path('./ephe')
 
-    # 3. Calculate Julian day in UTC
-    birth_dt_utc = birth_datetime.astimezone(timezone.utc) if birth_datetime.tzinfo else birth_datetime.replace(tzinfo=timezone.utc)
-
+    # 5. Calculate Julian day in UTC
     julian_day_utc = swe.utc_to_jd(
         birth_dt_utc.year, birth_dt_utc.month, birth_dt_utc.day,
         birth_dt_utc.hour, birth_dt_utc.minute, birth_dt_utc.second,
-        1  # Use Gregorian calendar
+        1  # Gregorian calendar
     )[1]
 
     chart = NatalChart()
 
-    # 4. Calculate astrological houses (using Placidus system)
+    # 6. Calculate astrological houses (Placidus)
     houses_cusps, ascmc = swe.houses(julian_day_utc, latitude, longitude, b'P')
 
-    # 5. Calculate planetary positions
+    # 7. Calculate planetary positions
     for name, planet_id in PLANET_MAPPING.items():
         position_data = swe.calc_ut(julian_day_utc, planet_id, swe.FLG_SPEED)
-        # ---- INICIO DE LA CORRECCIÓN ----
-        # Extraemos el primer número (longitud) del primer paquete de datos.
         planet_longitude = position_data[0][0]
-        # ---- FIN DE LA CORRECCIÓN ----
         sign, icon = get_zodiac_sign(planet_longitude)
 
         # Determine which house the planet falls into
@@ -106,7 +117,7 @@ async def calculate_natal_chart(birth_datetime: datetime, birth_place: str) -> N
             house=planet_house_number
         ))
 
-    # 6. Store the positions of the house cusps themselves
+    # 8. Store house cusps
     house_names = ["Ascendant", "House 2", "House 3", "Imum Coeli", "House 5", "House 6",
                    "Descendant", "House 8", "House 9", "Midheaven", "House 11", "House 12"]
 
@@ -121,4 +132,5 @@ async def calculate_natal_chart(birth_datetime: datetime, birth_place: str) -> N
             house=i + 1
         ))
 
-    return chart
+    # Return chart with location and timezone info
+    return chart, latitude, longitude, timezone_name
