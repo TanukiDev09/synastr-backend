@@ -52,11 +52,20 @@ class User:
     birth_date: date
     birth_time: time
     birth_place: str
-    latitude: Optional[float]
-    longitude: Optional[float]
-    timezone: Optional[str]
     photos: List[Photo]
-    natal_chart: Optional[NatalChartType]
+    
+    # =================================================================
+    # == INICIO: CORRECCIÓN DEFINITIVA DE CAMPOS OPCIONALES ==
+    # =================================================================
+    # Añadimos '= None' para que el constructor de Python entienda
+    # que estos campos no son obligatorios al crear el objeto.
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    timezone: Optional[str] = None
+    natal_chart: Optional[NatalChartType] = None
+    # =================================================================
+    # == FIN: CORRECIÓN DEFINITIVA DE CAMPOS OPCIONALES ==
+    # =================================================================
 
 @strawberry.type
 class AuthPayload:
