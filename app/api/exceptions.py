@@ -1,26 +1,34 @@
-"""
-Defines the custom exceptions for the GraphQL API.
+# app/api/exceptions.py
 
-Centralizing exceptions here breaks circular dependencies
-and keeps the code organized.
-"""
+import strawberry
 
-class UserAlreadyExistsError(Exception):
-    """Raised when trying to register an email that already exists."""
-    pass
+@strawberry.type
+class UserAlreadyExistsError:
+    """Error para cuando un email ya está registrado."""
+    message: str = "User with this email already exists"
 
-class InvalidCredentialsError(Exception):
-    """Raised when login credentials are incorrect."""
-    pass
+@strawberry.type
+class InvalidCredentialsError:
+    """Error para credenciales de login incorrectas."""
+    message: str = "Invalid email or password"
 
-class DatabaseOperationError(Exception):
-    """Raised when a database operation fails."""
-    pass
+@strawberry.type
+class AstrologicalCalculationError:
+    """Error durante el cálculo de la carta natal."""
+    message: str
 
-class LikeAlreadyExistsError(Exception):
-    """Raised when registering a duplicate "like"."""
-    pass
+# =================================================================
+# == INICIO: CÓDIGO AÑADIDO PARA LA EXCEPCIÓN DE AUTENTICACIÓN ==
+# =================================================================
 
-class AstrologicalCalculationError(Exception):
-    """Raised when natal chart calculation or geocoding fails."""
-    pass
+@strawberry.type
+class AuthenticationError:
+    """
+    Error para cuando un usuario no está autenticado o el token no es válido.
+    Se define aquí para que pueda ser importado y utilizado en otras partes de la API.
+    """
+    message: str
+
+# =================================================================
+# == FIN: CÓDIGO AÑADIDO PARA LA EXCEPCIÓN DE AUTENTICACIÓN ==
+# =================================================================

@@ -1,41 +1,64 @@
-"""
-Funciones helper para generación y verificación de JWT.
-
-Utiliza python-jose para firmar y verificar tokens. Los valores de configuración
-se leen de variables de entorno. Si no se encuentran, se usan valores por defecto
-solo para desarrollo.
-"""
+# app/auth/jwt.py
 
 import os
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from jose import JWTError, jwt
+from strawberry.types import Info
 
+# Importaciones necesarias para la nueva función, verificadas contra tu repositorio
+from app.db.client import get_mongo_db
+from app.api.exceptions import AuthenticationError
 
-def get_jwt_settings():
-    secret_key = os.getenv("JWT_SECRET_KEY", "super-secret-key")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-    expire_minutes = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
-    return secret_key, algorithm, expire_minutes
+# Clave secreta y algoritmo para JWT, leídos desde las variables de entorno
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a_super_secret_key_that_is_long_and_secure")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+def create_access_token(subject: str) -> str:
+    """
+    Crea un nuevo token de acceso JWT para un sujeto (típicamente el email del usuario).
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"exp": expire, "sub": subject}
+    # Se aplica la sugerencia de Sourcery: se retorna el valor directamente.
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def create_access_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
-    """Genera un JWT para el `subject` dado (por ejemplo, email)."""
-    secret_key, algorithm, expire_minutes = get_jwt_settings()
-    if expires_delta is None:
-        expires_delta = timedelta(minutes=expire_minutes)
-    expire = datetime.utcnow() + expires_delta
-    to_encode = {"sub": subject, "exp": expire}
-    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
-    return encoded_jwt
+# =================================================================
+# == INICIO: CÓDIGO AÑADIDO PARA OBTENER EL USUARIO DESDE EL TOKEN ==
+# =================================================================
 
+async def get_current_user_from_token(info: Info) -> dict:
+    """
+    Decodifica el token JWT de la cabecera de la petición, valida al usuario
+    y devuelve su documento de la base de datos.
+    """
+    request = info.context["request"]
+    auth_header = request.headers.get("Authorization")
 
-def verify_access_token(token: str) -> Optional[str]:
-    """Verifica un JWT y devuelve el `subject` (email) si es válido."""
-    secret_key, algorithm, _ = get_jwt_settings()
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise AuthenticationError(message="Not authenticated: Authorization header is missing or invalid")
+
+    token = auth_header.split(" ")[1]
+    
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return payload.get("sub")
-    except JWTError:
-        return None
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: Optional[str] = payload.get("sub")
+        if email is None:
+            raise AuthenticationError(message="Invalid token: subject missing")
+    except JWTError as e:
+        raise AuthenticationError(message=f"Invalid token: {e}") from e
+
+    db = get_mongo_db()
+    users_collection = db.get_collection("users")
+    user_data = await users_collection.find_one({"email": email})
+
+    if user_data is None:
+        raise AuthenticationError(message="User not found")
+
+    return user_data
+
+# =================================================================
+# == FIN: CÓDIGO AÑADIDO PARA OBTENER EL USUARIO DESDE EL TOKEN ==
+# =================================================================

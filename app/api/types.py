@@ -1,8 +1,4 @@
 # app/api/types.py
-"""
-Defines all GraphQL data types, inputs, and enums for the application.
-Centralizing definitions here keeps the code clean and organized.
-"""
 from __future__ import annotations
 import enum
 from datetime import date, time
@@ -46,7 +42,6 @@ class NatalChartType:
 
     @classmethod
     def from_pydantic(cls, pydantic_obj: BaseModel) -> "NatalChartType":
-        """Helper to convert Pydantic model to Strawberry type."""
         data = pydantic_obj.dict()
         return cls(**data)
 
@@ -57,9 +52,9 @@ class User:
     birth_date: date
     birth_time: time
     birth_place: str
-    latitude: Optional[float]          # ✅ Nuevo campo
-    longitude: Optional[float]         # ✅ Nuevo campo
-    timezone: Optional[str]            # ✅ Nuevo campo
+    latitude: Optional[float]
+    longitude: Optional[float]
+    timezone: Optional[str]
     photos: List[Photo]
     natal_chart: Optional[NatalChartType]
 
@@ -96,3 +91,15 @@ class LoginInput:
 class LikeInput:
     user_id: strawberry.ID
     target_user_id: strawberry.ID
+
+@strawberry.input
+class PhotoInput:
+    url: str
+    sign: Optional[ZodiacSign] = None
+    def to_dict(self) -> dict:
+        return {"url": self.url, "sign": self.sign.value if self.sign else None}
+
+@strawberry.input
+class AddPhotosInput:
+    user_id: strawberry.ID
+    photos: List[PhotoInput]
