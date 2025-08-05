@@ -17,6 +17,25 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+class UserInfo(BaseModel):
+    height: Optional[int] = None
+    weight: Optional[int] = None
+    school: Optional[str] = None  # Educación (universidad o instituto)
+    languages: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+    education: Optional[str] = None  # Nivel educativo
+    children: Optional[str] = None  # Planes familiares
+    communication_style: Optional[str] = None
+    pets: Optional[str] = None
+    drinking: Optional[str] = None
+    smoking: Optional[str] = None
+    fitness: Optional[str] = None
+    dietary: Optional[str] = None
+    sleeping: Optional[str] = None
+    politics: Optional[str] = None
+    spirituality: Optional[str] = None  # Religión
+
+
 class PhotoModel(BaseModel):
     url: str
     sign: Optional[str]
@@ -52,6 +71,10 @@ class UserModel(BaseModel):
     updated_at: Optional[datetime] = None
     plan: str = "free"
     photos: List[PhotoModel] = []
+    gender: str  # Obligatorio
+    looking_for: str  # Obligatorio (busco relación seria, casual, amistad)
+    sexual_orientation: Optional[List[str]] = None
+    user_info: Optional[UserInfo] = None  # Opcional
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
