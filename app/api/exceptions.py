@@ -3,32 +3,42 @@
 import strawberry
 
 @strawberry.type
-class UserAlreadyExistsError:
+class UserAlreadyExistsError(Exception):
     """Error para cuando un email ya está registrado."""
     message: str = "User with this email already exists"
 
+    def __init__(self, message: str = "User with this email already exists"):
+        super().__init__(message)
+        self.message = message
+
+
 @strawberry.type
-class InvalidCredentialsError:
+class InvalidCredentialsError(Exception):
     """Error para credenciales de login incorrectas."""
     message: str = "Invalid email or password"
 
+    def __init__(self, message: str = "Invalid email or password"):
+        super().__init__(message)
+        self.message = message
+
+
 @strawberry.type
-class AstrologicalCalculationError:
+class AstrologicalCalculationError(Exception):
     """Error durante el cálculo de la carta natal."""
     message: str
 
-# =================================================================
-# == INICIO: CÓDIGO AÑADIDO PARA LA EXCEPCIÓN DE AUTENTICACIÓN ==
-# =================================================================
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
 
 @strawberry.type
-class AuthenticationError:
+class AuthenticationError(Exception):
     """
     Error para cuando un usuario no está autenticado o el token no es válido.
-    Se define aquí para que pueda ser importado y utilizado en otras partes de la API.
     """
     message: str
 
-# =================================================================
-# == FIN: CÓDIGO AÑADIDO PARA LA EXCEPCIÓN DE AUTENTICACIÓN ==
-# =================================================================
+    def __init__(self, message: str = "Not authenticated: Authorization header is missing or invalid"):
+        super().__init__(message)
+        self.message = message
